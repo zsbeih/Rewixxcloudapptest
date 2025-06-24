@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Camera, Download, Trash2, RefreshCw, CheckCircle, XCircle, AlertCircle, X, Eye, Smartphone } from 'lucide-react';
 
@@ -125,7 +124,7 @@ function ReceiptDetectionApp() {
     }
   };
 
-  // Enhanced file processing with better error handling and image optimization
+  // Handle file selection from mobile camera
   const handleFileSelect = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
@@ -134,195 +133,81 @@ function ReceiptDetectionApp() {
     setDebugInfo('Processing image from mobile camera...');
 
     try {
-      // Validate file type
-      if (!file.type.startsWith('image/')) {
-        throw new Error('Please select a valid image file');
-      }
-
-      // Check file size (limit to 10MB)
-      if (file.size > 10 * 1024 * 1024) {
-        throw new Error('Image file is too large. Please choose a smaller image (max 10MB)');
-      }
-
-      setDebugInfo(`Processing ${file.type} image (${(file.size / 1024 / 1024).toFixed(2)}MB)...`);
-
-      // Process and optimize the image
-      const optimizedImageData = await processImageFile(file);
-      setLastCapturedImage(optimizedImageData);
-      
-      // Process the image
-      await processImage(optimizedImageData);
+      // Convert file to base64
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const imageData = e.target.result;
+        setLastCapturedImage(imageData);
+        
+        // Process the image
+        await processImage(imageData);
+      };
+      reader.readAsDataURL(file);
     } catch (error) {
       console.error('Error processing mobile image:', error);
       setDebugInfo('Error: ' + error.message);
       setProcessing(false);
-      
-      // Show user-friendly error message
-      alert(`Error processing image: ${error.message}`);
-    }
-
-    // Clear the input value to allow selecting the same file again
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
     }
   };
 
-  // New function to process and optimize image files
-  const processImageFile = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      
-      reader.onload = (e) => {
-        const img = new Image();
-        
-        img.onload = () => {
-          try {
-            // Create canvas for image processing
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            
-            // Calculate optimal dimensions (max 1920x1080 for better processing)
-            let { width, height } = img;
-            const maxWidth = 1920;
-            const maxHeight = 1080;
-            
-            if (width > maxWidth || height > maxHeight) {
-              const ratio = Math.min(maxWidth / width, maxHeight / height);
-              width *= ratio;
-              height *= ratio;
-            }
-            
-            canvas.width = width;
-            canvas.height = height;
-            
-            // Draw and compress image
-            ctx.drawImage(img, 0, 0, width, height);
-            
-            // Convert to JPEG with good quality (0.85 = 85% quality)
-            const optimizedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
-            
-            setDebugInfo(`Image optimized: ${width}x${height}`);
-            resolve(optimizedDataUrl);
-          } catch (error) {
-            reject(new Error('Failed to process image: ' + error.message));
-          }
-        };
-        
-        img.onerror = () => {
-          reject(new Error('Failed to load image file'));
-        };
-        
-        img.src = e.target.result;
-      };
-      
-      reader.onerror = () => {
-        reject(new Error('Failed to read image file'));
-      };
-      
-      reader.readAsDataURL(file);
-    });
-  };
-
-  // Enhanced image processing with better error handling and retry logic
+  // Process image (common function for both mobile and desktop)
   const processImage = async (imageData) => {
-    setDebugInfo('Preparing image for backend...');
+    setDebugInfo('Sending image to backend...');
     
     try {
-      // Validate image data
-      if (!imageData || !imageData.startsWith('data:image/')) {
-        throw new Error('Invalid image data format');
-      }
-
-      // Extract just the base64 part for smaller payload
-      const base64Data = imageData.split(',')[1];
-      if (!base64Data) {
-        throw new Error('Invalid base64 image data');
-      }
-
-      setDebugInfo('Sending image to backend...');
-      
-      // Enhanced fetch with timeout and better error handling
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-      
-      const response = await fetch('https://f3a0-24-35-46-77.ngrok-free.app/detect-image', {
+      const response = await fetch('https://2c6a-24-35-46-77.ngrok-free.app/detect-image', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
         },
         body: JSON.stringify({ 
-          image: imageData, // Send full data URL
-          timestamp: new Date().toISOString(),
-          source: isMobile ? 'mobile' : 'desktop'
+          image: imageData,
+          timestamp: new Date().toISOString()
         }),
-        signal: controller.signal
       });
 
-      clearTimeout(timeoutId);
-      setDebugInfo(`Response received: ${response.status} ${response.statusText}`);
+      setDebugInfo(`Response status: ${response.status}`);
 
       if (!response.ok) {
-        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        try {
-          const errorText = await response.text();
-          if (errorText) {
-            errorMessage += ` - ${errorText}`;
-          }
-        } catch (e) {
-          // Ignore error reading error text
-        }
-        throw new Error(errorMessage);
+        const errorText = await response.text();
+        console.error('HTTP Error:', response.status, errorText);
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
       }
 
-      let result;
-      try {
-        result = await response.json();
-      } catch (e) {
-        throw new Error('Invalid JSON response from server');
-      }
-
+      const result = await response.json();
       console.log('Detection result:', result);
       setDebugInfo('Detection successful!');
 
-      if (result.cards && Array.isArray(result.cards) && result.cards.length > 0) {
+      if (result.cards && result.cards.length > 0) {
         setDetectedReceipts(result.cards);
         setConnectionStatus('connected');
 
         const timestamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15);
         const newCsvEntries = result.cards.map(card => ({
           timestamp,
-          item: card.label || 'Unknown',
-          confidence: `${Math.round((card.confidence || 0) * 100) / 100}%`,
-          type: card.rank || card.type || 'Unknown',
-          category: card.suit || card.category || 'Unknown'
+          item: card.label,
+          confidence: `${card.confidence}%`,
+          type: card.rank,
+          category: card.suit
         }));
         setCsvData(prev => [...prev, ...newCsvEntries]);
       } else {
         setDetectedReceipts([]);
         setConnectionStatus('connected');
-        setDebugInfo('No items detected in image');
       }
 
     } catch (error) {
       console.error('Error during detection:', error);
+      setConnectionStatus('error');
+      setDebugInfo('Error: ' + error.message);
       
-      if (error.name === 'AbortError') {
-        setDebugInfo('Request timed out after 30 seconds');
-        setConnectionStatus('timeout');
-      } else if (error.message.includes('fetch') || error.message.includes('NetworkError') || error.message.includes('Failed to fetch')) {
-        setDebugInfo('Backend not available, using simulation');
-        setConnectionStatus('simulation');
+      if (error.message.includes('fetch') || error.message.includes('NetworkError')) {
         console.log('Backend not available, using simulation');
+        setDebugInfo('Backend not available, using simulation');
         simulateDetection();
-        return; // Don't show error for simulation
       } else {
-        setConnectionStatus('error');
-        setDebugInfo('Error: ' + error.message);
+        alert('Detection failed: ' + error.message);
       }
-      
-      // Show user-friendly error message
-      alert(`Detection failed: ${error.message}\n\nPlease check your connection and try again.`);
     } finally {
       setProcessing(false);
       stopCamera();
@@ -348,6 +233,7 @@ function ReceiptDetectionApp() {
     
     setCameraActive(false);
     setCameraError('');
+    setDebugInfo('');
     setCurrentView('home');
   };
 
@@ -376,7 +262,7 @@ function ReceiptDetectionApp() {
       canvas.height = video.videoHeight;
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      const imageData = canvas.toDataURL('image/jpeg', 0.85);
+      const imageData = canvas.toDataURL('image/jpeg', 0.9);
       setLastCapturedImage(imageData);
       
       await processImage(imageData);
@@ -386,7 +272,7 @@ function ReceiptDetectionApp() {
     }
   };
 
-  // Enhanced simulate detection for demo purposes
+  // Simulate detection for demo purposes
   const simulateDetection = () => {
     const possibleItems = [
       { label: 'Coffee', type: 'Beverage', category: 'Food', confidence: 85.2 + Math.random() * 10 },
@@ -414,8 +300,6 @@ function ReceiptDetectionApp() {
       category: item.category
     }));
     setCsvData(prev => [...prev, ...newCsvEntries]);
-    
-    setDebugInfo('Simulation completed successfully');
   };
 
   // Download CSV data
@@ -444,7 +328,6 @@ function ReceiptDetectionApp() {
     setCsvData([]);
     setDetectedReceipts([]);
     setLastCapturedImage(null);
-    setDebugInfo('');
   };
 
   useEffect(() => {
@@ -466,36 +349,6 @@ function ReceiptDetectionApp() {
             <span className="text-sm">
               {isMobile ? 'Mobile Device - Using Native Camera' : 'Desktop Device - Using Web Camera'}
             </span>
-          </div>
-        </div>
-
-        {/* Connection Status Indicator */}
-        <div className="mb-6 p-3 rounded-lg border">
-          <div className="flex items-center justify-center gap-2">
-            {connectionStatus === 'connected' && (
-              <>
-                <CheckCircle className="w-4 h-4 text-green-600" />
-                <span className="text-sm text-green-700">Backend Connected</span>
-              </>
-            )}
-            {connectionStatus === 'simulation' && (
-              <>
-                <AlertCircle className="w-4 h-4 text-yellow-600" />
-                <span className="text-sm text-yellow-700">Demo Mode (Backend Offline)</span>
-              </>
-            )}
-            {connectionStatus === 'error' && (
-              <>
-                <XCircle className="w-4 h-4 text-red-600" />
-                <span className="text-sm text-red-700">Connection Error</span>
-              </>
-            )}
-            {connectionStatus === 'disconnected' && (
-              <>
-                <AlertCircle className="w-4 h-4 text-gray-600" />
-                <span className="text-sm text-gray-700">Ready to Connect</span>
-              </>
-            )}
           </div>
         </div>
         
@@ -538,10 +391,7 @@ function ReceiptDetectionApp() {
           <div className="flex items-center justify-between p-6 border-b">
             <h2 className="text-xl font-semibold">Capture Receipt</h2>
             <button
-              onClick={() => {
-                stopCamera();
-                setDebugInfo('');
-              }}
+              onClick={stopCamera}
               className="p-2 hover:bg-gray-100 rounded-full transition-colors"
             >
               <X className="w-5 h-5" />
@@ -595,7 +445,7 @@ function ReceiptDetectionApp() {
                 </p>
               </div>
             ) : (
-              // Desktop Camera Interface
+              // Desktop Camera Interface (existing code)
               <>
                 <div className="relative bg-gray-900 rounded-lg overflow-hidden mb-4" style={{ aspectRatio: '4/3' }}>
                   <video
@@ -684,7 +534,7 @@ function ReceiptDetectionApp() {
     );
   };
 
-  // Results View
+  // Results View (unchanged)
   const ResultsView = () => (
     <div className="max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-6">
@@ -738,7 +588,7 @@ function ReceiptDetectionApp() {
                   </div>
                   <div className="text-right">
                     <span className="inline-block bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium">
-                      {typeof item.confidence === 'number' ? `${Math.round(item.confidence * 100) / 100}%` : item.confidence}
+                      {item.confidence}%
                     </span>
                   </div>
                 </div>
