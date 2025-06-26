@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import BarcodeScannerModal from "./BarcodeScannerModal";
 
 const Materials = () => {
   const [materials, setMaterials] = useState([]);
@@ -7,6 +8,8 @@ const Materials = () => {
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [stockFilter, setStockFilter] = useState('All');
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showBarcodeScanner, setShowBarcodeScanner] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const [newMaterial, setNewMaterial] = useState({
     name: '',
     category: '',
@@ -17,6 +20,11 @@ const Materials = () => {
     unitPrice: '',
     supplier: ''
   });
+
+  useEffect(() => {
+    const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    setIsMobile(isMobileDevice);
+  }, []);
 
   const categories = ['All', 'Wire', 'Outlets', 'Breakers', 'Connectors', 'Tools', 'Fixtures', 'Other'];
   const stockStatuses = ['All', 'Low Stock', 'In Stock', 'Overstocked'];
@@ -96,7 +104,37 @@ const Materials = () => {
         >
           {showAddForm ? 'Cancel' : 'Add New Material'}
         </button>
+        <button
+          className="primary-button"
+          onClick={() => setShowBarcodeScanner(true)}
+          disabled={!isMobile}
+          style={{ marginLeft: '1rem', background: isMobile ? '#2ecc71' : '#ccc', color: isMobile ? '#fff' : '#888' }}
+        >
+          Scan Barcode
+        </button>
       </div>
+
+      {showBarcodeScanner && (
+        <BarcodeScannerModal
+          onDetected={(barcode) => {
+            setShowBarcodeScanner(false);
+            fetch(`https://7fd8-24-35-46-77.ngrok-free.app/api/materials/barcode-lookup?barcode=${barcode}`)
+              .then(res => res.json())
+              .then(data => {
+                setNewMaterial({
+                  ...newMaterial,
+                  name: data.name || '',
+                  category: data.category || '',
+                  sku: data.sku || barcode,
+                  unitPrice: data.price ? parseFloat(data.price.replace(/[^0-9.]/g, "")) : '',
+                  supplier: data.supplier || 'Home Depot'
+                });
+                setShowAddForm(true);
+              });
+          }}
+          onClose={() => setShowBarcodeScanner(false)}
+        />
+      )}
 
       {showAddForm && (
         <form onSubmit={handleAddMaterial} style={{ marginBottom: '2rem', padding: '1rem', border: '1px solid #ddd', borderRadius: '5px' }}>
