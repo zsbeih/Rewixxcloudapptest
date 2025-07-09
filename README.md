@@ -2,7 +2,7 @@
   <a href="RewixxCloudApp"><img src="https://github.com/MikeJouni/Rewixxcloudapp/blob/zain/assets/images/rewixx_logo.png" width="400" > </a>
 </h1>
 <h4 align="center">Web application for Imad's Electrical Services LLC with customer management, job handling, inventory tracking, and report generating.</h4>
-
+ 
 <p align="center">
   <a href="#key-features">Key Features</a> •
   <a href="#project-structure">Directory Structure</a> •
